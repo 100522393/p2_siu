@@ -1,10 +1,11 @@
 {
   "name": "p2",
   "version": "1.0.0",
-  "description": "",
+  "description": "��#\u0000 \u0000p\u00002\u0000_\u0000s\u0000i\u0000u\u0000\r\u0000 \u0000",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",
@@ -12,5 +13,15 @@
   "dependencies": {
     "express": "^5.2.1",
     "socket.io": "^4.8.3"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/100522393/p2_siu.git"
+  },
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/100522393/p2_siu/issues"
+  },
+  "homepage": "https://github.com/100522393/p2_siu#readme",
+  "devDependencies": {}
 }

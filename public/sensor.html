@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sensor Sin Interrumpir el Flow</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
+    <style>
+        body { background: #111; color: white; text-align: center; font-family: sans-serif; }
+        video { transform: rotateY(180deg); width: 400px; border-radius: 10px; }
+        .debug { color: #0f0; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>Control Gestual y Corporal</h1>
+    <video id="webcam" autoplay></video>
+    <div id="status" class="debug">Iniciando...</div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script type="module">
+        import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
+        const socket = io();
+        const video = document.getElementById("webcam");
+        const status = document.getElementById("status");
+
+        let faceLandmarker;
+        let lastNoseX = 0.5;
+        let cooldown = false;
+
+        async function init() {
+            const files = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+            faceLandmarker = await FaceLandmarker.createFromOptions(files, {
+                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task` },
+                runningMode: "VIDEO", numFaces: 1
+            });
+            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
+                video.srcObject = s;
+                video.addEventListener("loadeddata", predict);
+            });
+        }
+
+        async function predict() {
+            const results = faceLandmarker.detectForVideo(video, performance.now());
+            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                const marks = results.faceLandmarks[0];
+                
+                // 1. GESTOS: Guiños (Punto 3.b)
+                const dIzq = Math.abs(marks[159].y - marks[145].y);
+                const dDer = Math.abs(marks[386].y - marks[374].y);
+                const UMBRAL = 0.012;
+
+                if (!cooldown) {
+                    if (dIzq < UMBRAL && dDer < UMBRAL) { // Ambos ojos: SALIDA (3.c)
+                        socket.emit('comando-salir');
+                        triggerCooldown();
+                    } else if (dDer < UMBRAL) {
+                        socket.emit('guiño-derecho'); // AVANZAR / SELECCIONAR
+                        triggerCooldown();
+                    } else if (dIzq < UMBRAL) {
+                        socket.emit('guiño-izquierdo'); // ATRÁS
+                        triggerCooldown();
+                    }
+
+                    // 2. CUERPO: Navegación por Menú (3.a)
+                    const noseX = marks[1].x;
+                    if (Math.abs(noseX - lastNoseX) > 0.15) {
+                        socket.emit('mover-selector', noseX > 0.5 ? 'izquierda' : 'derecha');
+                        lastNoseX = noseX;
+                        triggerCooldown();
+                    }
+
+                    // 3. CUERPO: Zoom por cercanía (3.d Adicional)
+                    // Calculamos distancia entre ojos como referencia de profundidad
+                    const eyeDist = Math.abs(marks[33].x - marks[263].x);
+                    if (eyeDist > 0.25) socket.emit('comando-zoom', 1.5);
+                    else socket.emit('comando-zoom', 1.0);
+                }
+            }
+            requestAnimationFrame(predict);
+        }
+
+        function triggerCooldown() {
+            cooldown = true;
+            setTimeout(() => cooldown = false, 800);
+        }
+
+        init();
+    </script>
+</body>
+</html>

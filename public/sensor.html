@@ -4,82 +4,354 @@
     <title>Sensor Sin Interrumpir el Flow</title>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js" crossorigin="anonymous"></script>
     <style>
-        body { background: #111; color: white; text-align: center; font-family: sans-serif; }
-        video { transform: rotateY(180deg); width: 400px; border-radius: 10px; }
-        .debug { color: #0f0; font-family: monospace; }
+        body {
+            background: #111;
+            color: white;
+            text-align: center;
+            font-family: sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+
+        .camera-container {
+            position: relative;
+            display: inline-block;
+            margin-top: 10px;
+        }
+
+        video {
+            transform: rotateY(180deg);
+            width: 400px;
+            border-radius: 10px;
+            display: block;
+        }
+
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+        }
+
+        .debug {
+            color: #0f0;
+            font-family: monospace;
+            white-space: pre-line;
+            margin-top: 12px;
+        }
+
+        .controls {
+            margin: 12px 0;
+        }
+
+        label {
+            font-size: 1rem;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
     <h1>Control Gestual y Corporal</h1>
-    <video id="webcam" autoplay></video>
+
+    <div class="controls">
+        <label>
+            <input type="checkbox" id="devToggle">
+            Modo desarrollador
+        </label>
+    </div>
+
+    <div class="camera-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+    </div>
+
     <div id="status" class="debug">Iniciando...</div>
 
     <script src="/socket.io/socket.io.js"></script>
     <script type="module">
         import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.js";
+
         const socket = io();
         const video = document.getElementById("webcam");
         const status = document.getElementById("status");
+        const canvas = document.getElementById("overlay");
+        const ctx = canvas.getContext("2d");
+        const devToggle = document.getElementById("devToggle");
+
+        const COOLDOWN = 500;
+        const UMBRAL_GUINYO = 0.005;
+        const UMBRAL_ZOOM = 0.25;
+        const UMBRAL_NARIZ_CARA = 0.020;
 
         let faceLandmarker;
-        let lastNoseX = 0.5;
         let cooldown = false;
+        let devMode = false;
+        let estadoNariz = "centro";
+
+        devToggle.addEventListener("change", (e) => {
+            devMode = e.target.checked;
+            if (!devMode) {
+                clearOverlay();
+            }
+        });
 
         async function init() {
-            const files = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+            const files = await FilesetResolver.forVisionTasks(
+                "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm"
+            );
+
             faceLandmarker = await FaceLandmarker.createFromOptions(files, {
-                baseOptions: { modelAssetPath: `https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task` },
-                runningMode: "VIDEO", numFaces: 1
+                baseOptions: {
+                    modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
+                },
+                runningMode: "VIDEO",
+                numFaces: 1
             });
-            navigator.mediaDevices.getUserMedia({ video: true }).then(s => {
-                video.srcObject = s;
-                video.addEventListener("loadeddata", predict);
-            });
+
+            navigator.mediaDevices.getUserMedia({ video: true })
+                .then((stream) => {
+                    video.srcObject = stream;
+
+                    video.addEventListener("loadeddata", () => {
+                        syncCanvasSize();
+                        predict();
+                    });
+                })
+                .catch((error) => {
+                    console.error("Error al acceder a la cámara:", error);
+                    status.innerText = "No se pudo acceder a la cámara.";
+                });
         }
 
-        async function predict() {
-            const results = faceLandmarker.detectForVideo(video, performance.now());
-            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
-                const marks = results.faceLandmarks[0];
-                
-                // 1. GESTOS: Guiños (Punto 3.b)
-                const dIzq = Math.abs(marks[159].y - marks[145].y);
-                const dDer = Math.abs(marks[386].y - marks[374].y);
-                const UMBRAL = 0.012;
+        function syncCanvasSize() {
+            canvas.width = video.videoWidth || 400;
+            canvas.height = video.videoHeight || 300;
+        }
 
-                if (!cooldown) {
-                    if (dIzq < UMBRAL && dDer < UMBRAL) { // Ambos ojos: SALIDA (3.c)
-                        socket.emit('comando-salir');
-                        triggerCooldown();
-                    } else if (dDer < UMBRAL) {
-                        socket.emit('guiño-derecho'); // AVANZAR / SELECCIONAR
-                        triggerCooldown();
-                    } else if (dIzq < UMBRAL) {
-                        socket.emit('guiño-izquierdo'); // ATRÁS
-                        triggerCooldown();
-                    }
-
-                    // 2. CUERPO: Navegación por Menú (3.a)
-                    const noseX = marks[1].x;
-                    if (Math.abs(noseX - lastNoseX) > 0.15) {
-                        socket.emit('mover-selector', noseX > 0.5 ? 'izquierda' : 'derecha');
-                        lastNoseX = noseX;
-                        triggerCooldown();
-                    }
-
-                    // 3. CUERPO: Zoom por cercanía (3.d Adicional)
-                    // Calculamos distancia entre ojos como referencia de profundidad
-                    const eyeDist = Math.abs(marks[33].x - marks[263].x);
-                    if (eyeDist > 0.25) socket.emit('comando-zoom', 1.5);
-                    else socket.emit('comando-zoom', 1.0);
-                }
-            }
-            requestAnimationFrame(predict);
+        function clearOverlay() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
 
         function triggerCooldown() {
             cooldown = true;
-            setTimeout(() => cooldown = false, 1500);
+            setTimeout(() => {
+                cooldown = false;
+            }, COOLDOWN);
+        }
+
+        function drawPoint(x, y, color = "lime", radius = 2) {
+            ctx.beginPath();
+            ctx.arc(x, y, radius, 0, Math.PI * 2);
+            ctx.fillStyle = color;
+            ctx.fill();
+        }
+
+        function drawLine(x1, y1, x2, y2, color = "yellow", width = 2) {
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = width;
+            ctx.stroke();
+        }
+
+        function drawText(text, x, y, color = "white") {
+            ctx.fillStyle = color;
+            ctx.font = "14px monospace";
+            ctx.fillText(text, x, y);
+        }
+
+        function getEstadoNarizSegunCara(marks) {
+            const noseX = marks[1].x;
+            const leftEyeX = marks[33].x;
+            const rightEyeX = marks[263].x;
+
+            const eyeCenterX = (leftEyeX + rightEyeX) / 2;
+            const noseOffset = noseX - eyeCenterX;
+
+            if (noseOffset < -UMBRAL_NARIZ_CARA) {
+                return {
+                    estado: "izquierda",
+                    eyeCenterX,
+                    noseX,
+                    noseOffset
+                };
+            }
+
+            if (noseOffset > UMBRAL_NARIZ_CARA) {
+                return {
+                    estado: "derecha",
+                    eyeCenterX,
+                    noseX,
+                    noseOffset
+                };
+            }
+
+            return {
+                estado: "centro",
+                eyeCenterX,
+                noseX,
+                noseOffset
+            };
+        }
+
+        function drawDebug(marks, dIzq, dDer, eyeDist, noseX, eyeCenterX, noseOffset, estadoActual) {
+            if (!devMode) return;
+
+            clearOverlay();
+
+            for (const p of marks) {
+                drawPoint(p.x * canvas.width, p.y * canvas.height, "lime", 1.8);
+            }
+
+            const nose = marks[1];
+
+            // OJOS INTERCAMBIADOS PARA COINCIDIR CON LA PROYECCIÓN INVERTIDA
+            const leftTop = marks[386];
+            const leftBottom = marks[374];
+            const rightTop = marks[159];
+            const rightBottom = marks[145];
+            const leftEyeOuter = marks[263];
+            const rightEyeOuter = marks[33];
+
+            const nosePx = nose.x * canvas.width;
+            const nosePy = nose.y * canvas.height;
+
+            const leftTopX = leftTop.x * canvas.width;
+            const leftTopY = leftTop.y * canvas.height;
+            const leftBottomX = leftBottom.x * canvas.width;
+            const leftBottomY = leftBottom.y * canvas.height;
+
+            const rightTopX = rightTop.x * canvas.width;
+            const rightTopY = rightTop.y * canvas.height;
+            const rightBottomX = rightBottom.x * canvas.width;
+            const rightBottomY = rightBottom.y * canvas.height;
+
+            const leftEyeOuterX = leftEyeOuter.x * canvas.width;
+            const leftEyeOuterY = leftEyeOuter.y * canvas.height;
+            const rightEyeOuterX = rightEyeOuter.x * canvas.width;
+            const rightEyeOuterY = rightEyeOuter.y * canvas.height;
+
+            const eyeCenterPx = eyeCenterX * canvas.width;
+
+            drawPoint(nosePx, nosePy, "red", 5);
+
+            drawLine(eyeCenterPx, 0, eyeCenterPx, canvas.height, "#ffd700", 2);
+            drawLine(leftEyeOuterX, leftEyeOuterY, rightEyeOuterX, rightEyeOuterY, "orange", 2);
+            drawLine(nosePx, nosePy, eyeCenterPx, nosePy, "#ff00ff", 2);
+            drawLine(0, canvas.height / 2, canvas.width, canvas.height / 2, "#444", 1);
+
+            drawLine(leftTopX, leftTopY, leftBottomX, leftBottomY, dIzq < UMBRAL_GUINYO ? "red" : "lime", 3);
+            drawLine(rightTopX, rightTopY, rightBottomX, rightBottomY, dDer < UMBRAL_GUINYO ? "red" : "lime", 3);
+
+            drawText(`NoseX: ${noseX.toFixed(3)}`, 10, 20);
+            drawText(`Centro ojos X: ${eyeCenterX.toFixed(3)}`, 10, 40, "#ffd700");
+            drawText(`Offset nariz-cara: ${noseOffset.toFixed(4)}`, 10, 60, "#ff00ff");
+            drawText(`Umbral nariz-cara: ${UMBRAL_NARIZ_CARA}`, 10, 80, "#00bfff");
+            drawText(`Estado nariz: ${estadoActual}`, 10, 100, "#ffd700");
+            drawText(`Ojo izq: ${dIzq.toFixed(4)}`, 10, 120, dIzq < UMBRAL_GUINYO ? "red" : "white");
+            drawText(`Ojo der: ${dDer.toFixed(4)}`, 10, 140, dDer < UMBRAL_GUINYO ? "red" : "white");
+            drawText(`EyeDist: ${eyeDist.toFixed(4)}`, 10, 160, "orange");
+            drawText(`Cooldown: ${cooldown ? "ON" : "OFF"}`, 10, 180, cooldown ? "red" : "lime");
+
+            if (estadoActual === "izquierda") {
+                drawText("NARIZ A LA IZQUIERDA DEL CENTRO DE LA CARA", 10, 210, "#ff9900");
+            } else if (estadoActual === "derecha") {
+                drawText("NARIZ A LA DERECHA DEL CENTRO DE LA CARA", 10, 210, "#00bfff");
+            } else {
+                drawText("NARIZ CENTRADA RESPECTO A LA CARA", 10, 210, "lime");
+            }
+        }
+
+        async function predict() {
+            if (!faceLandmarker || video.readyState < 2) {
+                requestAnimationFrame(predict);
+                return;
+            }
+
+            syncCanvasSize();
+
+            const results = faceLandmarker.detectForVideo(video, performance.now());
+
+            if (results.faceLandmarks && results.faceLandmarks.length > 0) {
+                const marks = results.faceLandmarks[0].map(p => ({
+                    x: 1 - p.x,
+                    y: p.y,
+                    z: p.z
+                }));
+
+                // OJOS INTERCAMBIADOS PARA COINCIDIR CON LA PROYECCIÓN INVERTIDA
+                const dIzq = Math.abs(marks[386].y - marks[374].y);
+                const dDer = Math.abs(marks[159].y - marks[145].y);
+
+                const infoNariz = getEstadoNarizSegunCara(marks);
+                const noseX = infoNariz.noseX;
+                const eyeCenterX = infoNariz.eyeCenterX;
+                const noseOffset = infoNariz.noseOffset;
+                const estadoActualNariz = infoNariz.estado;
+
+                const eyeDist = Math.abs(marks[33].x - marks[263].x);
+
+                drawDebug(
+                    marks,
+                    dIzq,
+                    dDer,
+                    eyeDist,
+                    noseX,
+                    eyeCenterX,
+                    noseOffset,
+                    estadoActualNariz
+                );
+
+                status.innerText =
+                    `Modo dev: ${devMode}\n` +
+                    `NoseX: ${noseX.toFixed(3)}\n` +
+                    `Centro ojos X: ${eyeCenterX.toFixed(3)}\n` +
+                    `Offset nariz-cara: ${noseOffset.toFixed(4)}\n` +
+                    `Estado nariz: ${estadoActualNariz}\n` +
+                    `Umbral: ${UMBRAL_NARIZ_CARA}\n` +
+                    `Ojo izq: ${dIzq.toFixed(4)}\n` +
+                    `Ojo der: ${dDer.toFixed(4)}\n` +
+                    `EyeDist: ${eyeDist.toFixed(4)}\n` +
+                    `Cooldown: ${cooldown ? "ON" : "OFF"}`;
+
+                if (!cooldown) {
+                    if (dIzq < UMBRAL_GUINYO && dDer < UMBRAL_GUINYO) {
+                        socket.emit("comando-salir");
+                        triggerCooldown();
+                    } else if (dDer < UMBRAL_GUINYO) {
+                        socket.emit("guiño-derecho");
+                        triggerCooldown();
+                    } else if (dIzq < UMBRAL_GUINYO) {
+                        socket.emit("guiño-izquierdo");
+                        triggerCooldown();
+                    }
+
+                    if (estadoActualNariz !== estadoNariz) {
+                        if (estadoActualNariz === "izquierda") {
+                            socket.emit("mover-selector", "izquierda");
+                            triggerCooldown();
+                        } else if (estadoActualNariz === "derecha") {
+                            socket.emit("mover-selector", "derecha");
+                            triggerCooldown();
+                        }
+
+                        estadoNariz = estadoActualNariz;
+                    }
+
+                    if (eyeDist > UMBRAL_ZOOM) {
+                        socket.emit("comando-zoom", 1.5);
+                    } else {
+                        socket.emit("comando-zoom", 1.0);
+                    }
+                }
+            } else {
+                status.innerText = `Modo dev: ${devMode}\nNo se detecta ninguna cara.`;
+                estadoNariz = "centro";
+                clearOverlay();
+            }
+
+            requestAnimationFrame(predict);
         }
 
         init();

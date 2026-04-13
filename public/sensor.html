@@ -83,10 +83,17 @@
         const UMBRAL_ZOOM = 0.25;
         const UMBRAL_NARIZ_CARA = 0.020;
 
+        const TIEMPO_MINIMO_CIERRE = 500; // ambos ojos cerrados para salir
+        const TIEMPO_MINIMO_GUINYO = 100; // un ojo cerrado el tiempo suficiente para considerarlo guiño
+
         let faceLandmarker;
         let cooldown = false;
         let devMode = false;
         let estadoNariz = "centro";
+
+        let tiempoInicioOjosCerrados = null;
+        let tiempoInicioGuinyoIzq = null;
+        let tiempoInicioGuinyoDer = null;
 
         devToggle.addEventListener("change", (e) => {
             devMode = e.target.checked;
@@ -195,7 +202,7 @@
             };
         }
 
-        function drawDebug(marks, dIzq, dDer, eyeDist, noseX, eyeCenterX, noseOffset, estadoActual) {
+        function drawDebug(marks, dIzq, dDer, eyeDist, noseX, eyeCenterX, noseOffset, estadoActual, tiempoCierreActual, tiempoGuinyoIzqActual, tiempoGuinyoDerActual) {
             if (!devMode) return;
 
             clearOverlay();
@@ -206,7 +213,6 @@
 
             const nose = marks[1];
 
-            // OJOS INTERCAMBIADOS PARA COINCIDIR CON LA PROYECCIÓN INVERTIDA
             const leftTop = marks[386];
             const leftBottom = marks[374];
             const rightTop = marks[159];
@@ -247,20 +253,14 @@
             drawText(`NoseX: ${noseX.toFixed(3)}`, 10, 20);
             drawText(`Centro ojos X: ${eyeCenterX.toFixed(3)}`, 10, 40, "#ffd700");
             drawText(`Offset nariz-cara: ${noseOffset.toFixed(4)}`, 10, 60, "#ff00ff");
-            drawText(`Umbral nariz-cara: ${UMBRAL_NARIZ_CARA}`, 10, 80, "#00bfff");
-            drawText(`Estado nariz: ${estadoActual}`, 10, 100, "#ffd700");
-            drawText(`Ojo izq: ${dIzq.toFixed(4)}`, 10, 120, dIzq < UMBRAL_GUINYO ? "red" : "white");
-            drawText(`Ojo der: ${dDer.toFixed(4)}`, 10, 140, dDer < UMBRAL_GUINYO ? "red" : "white");
-            drawText(`EyeDist: ${eyeDist.toFixed(4)}`, 10, 160, "orange");
-            drawText(`Cooldown: ${cooldown ? "ON" : "OFF"}`, 10, 180, cooldown ? "red" : "lime");
-
-            if (estadoActual === "izquierda") {
-                drawText("NARIZ A LA IZQUIERDA DEL CENTRO DE LA CARA", 10, 210, "#ff9900");
-            } else if (estadoActual === "derecha") {
-                drawText("NARIZ A LA DERECHA DEL CENTRO DE LA CARA", 10, 210, "#00bfff");
-            } else {
-                drawText("NARIZ CENTRADA RESPECTO A LA CARA", 10, 210, "lime");
-            }
+            drawText(`Estado nariz: ${estadoActual}`, 10, 80, "#ffd700");
+            drawText(`Ojo izq: ${dIzq.toFixed(4)}`, 10, 100, dIzq < UMBRAL_GUINYO ? "red" : "white");
+            drawText(`Ojo der: ${dDer.toFixed(4)}`, 10, 120, dDer < UMBRAL_GUINYO ? "red" : "white");
+            drawText(`EyeDist: ${eyeDist.toFixed(4)}`, 10, 140, "orange");
+            drawText(`Cooldown: ${cooldown ? "ON" : "OFF"}`, 10, 160, cooldown ? "red" : "lime");
+            drawText(`Cierre ambos: ${tiempoCierreActual} ms`, 10, 180, "#00ffcc");
+            drawText(`Guiño izq: ${tiempoGuinyoIzqActual} ms`, 10, 200, "#00ffcc");
+            drawText(`Guiño der: ${tiempoGuinyoDerActual} ms`, 10, 220, "#00ffcc");
         }
 
         async function predict() {
@@ -280,9 +280,14 @@
                     z: p.z
                 }));
 
-                // OJOS INTERCAMBIADOS PARA COINCIDIR CON LA PROYECCIÓN INVERTIDA
                 const dIzq = Math.abs(marks[386].y - marks[374].y);
                 const dDer = Math.abs(marks[159].y - marks[145].y);
+
+                const ojoIzqCerrado = dIzq < UMBRAL_GUINYO;
+                const ojoDerCerrado = dDer < UMBRAL_GUINYO;
+                const ambosCerrados = ojoIzqCerrado && ojoDerCerrado;
+                const soloIzqCerrado = ojoIzqCerrado && !ojoDerCerrado;
+                const soloDerCerrado = ojoDerCerrado && !ojoIzqCerrado;
 
                 const infoNariz = getEstadoNarizSegunCara(marks);
                 const noseX = infoNariz.noseX;
@@ -292,6 +297,44 @@
 
                 const eyeDist = Math.abs(marks[33].x - marks[263].x);
 
+                let tiempoCierreActual = 0;
+                let tiempoGuinyoIzqActual = 0;
+                let tiempoGuinyoDerActual = 0;
+
+                // Ambos ojos cerrados
+                if (ambosCerrados) {
+                    if (tiempoInicioOjosCerrados === null) {
+                        tiempoInicioOjosCerrados = Date.now();
+                    }
+                    tiempoCierreActual = Date.now() - tiempoInicioOjosCerrados;
+
+                    // Cancelar posibles guiños si se cerraron los dos ojos
+                    tiempoInicioGuinyoIzq = null;
+                    tiempoInicioGuinyoDer = null;
+                } else {
+                    tiempoInicioOjosCerrados = null;
+                }
+
+                // Guiño izquierdo: solo el izquierdo cerrado
+                if (soloIzqCerrado) {
+                    if (tiempoInicioGuinyoIzq === null) {
+                        tiempoInicioGuinyoIzq = Date.now();
+                    }
+                    tiempoGuinyoIzqActual = Date.now() - tiempoInicioGuinyoIzq;
+                } else {
+                    tiempoInicioGuinyoIzq = null;
+                }
+
+                // Guiño derecho: solo el derecho cerrado
+                if (soloDerCerrado) {
+                    if (tiempoInicioGuinyoDer === null) {
+                        tiempoInicioGuinyoDer = Date.now();
+                    }
+                    tiempoGuinyoDerActual = Date.now() - tiempoInicioGuinyoDer;
+                } else {
+                    tiempoInicioGuinyoDer = null;
+                }
+
                 drawDebug(
                     marks,
                     dIzq,
@@ -300,7 +343,10 @@
                     noseX,
                     eyeCenterX,
                     noseOffset,
-                    estadoActualNariz
+                    estadoActualNariz,
+                    tiempoCierreActual,
+                    tiempoGuinyoIzqActual,
+                    tiempoGuinyoDerActual
                 );
 
                 status.innerText =
@@ -309,22 +355,31 @@
                     `Centro ojos X: ${eyeCenterX.toFixed(3)}\n` +
                     `Offset nariz-cara: ${noseOffset.toFixed(4)}\n` +
                     `Estado nariz: ${estadoActualNariz}\n` +
-                    `Umbral: ${UMBRAL_NARIZ_CARA}\n` +
                     `Ojo izq: ${dIzq.toFixed(4)}\n` +
                     `Ojo der: ${dDer.toFixed(4)}\n` +
-                    `EyeDist: ${eyeDist.toFixed(4)}\n` +
+                    `Izq cerrado: ${ojoIzqCerrado ? "SI" : "NO"}\n` +
+                    `Der cerrado: ${ojoDerCerrado ? "SI" : "NO"}\n` +
+                    `Ambos cerrados: ${ambosCerrados ? "SI" : "NO"}\n` +
+                    `Tiempo ambos: ${tiempoCierreActual} ms\n` +
+                    `Tiempo guiño izq: ${tiempoGuinyoIzqActual} ms\n` +
+                    `Tiempo guiño der: ${tiempoGuinyoDerActual} ms\n` +
                     `Cooldown: ${cooldown ? "ON" : "OFF"}`;
 
                 if (!cooldown) {
-                    if (dIzq < UMBRAL_GUINYO && dDer < UMBRAL_GUINYO) {
+                    if (ambosCerrados && tiempoCierreActual >= TIEMPO_MINIMO_CIERRE) {
                         socket.emit("comando-salir");
                         triggerCooldown();
-                    } else if (dDer < UMBRAL_GUINYO) {
+                        tiempoInicioOjosCerrados = null;
+                        tiempoInicioGuinyoIzq = null;
+                        tiempoInicioGuinyoDer = null;
+                    } else if (soloDerCerrado && tiempoGuinyoDerActual >= TIEMPO_MINIMO_GUINYO) {
                         socket.emit("guiño-derecho");
                         triggerCooldown();
-                    } else if (dIzq < UMBRAL_GUINYO) {
+                        tiempoInicioGuinyoDer = null;
+                    } else if (soloIzqCerrado && tiempoGuinyoIzqActual >= TIEMPO_MINIMO_GUINYO) {
                         socket.emit("guiño-izquierdo");
                         triggerCooldown();
+                        tiempoInicioGuinyoIzq = null;
                     }
 
                     if (estadoActualNariz !== estadoNariz) {
@@ -348,6 +403,9 @@
             } else {
                 status.innerText = `Modo dev: ${devMode}\nNo se detecta ninguna cara.`;
                 estadoNariz = "centro";
+                tiempoInicioOjosCerrados = null;
+                tiempoInicioGuinyoIzq = null;
+                tiempoInicioGuinyoDer = null;
                 clearOverlay();
             }
 

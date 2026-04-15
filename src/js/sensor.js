@@ -17,8 +17,8 @@ let devMode = false;
 let cooldown = false;
 let estadoNariz = "centro";
 let tiempoInicioOjosCerrados = null;
-let tiempoInicioGuinyoIzq = null;
-let tiempoInicioGuinyoDer = null;
+let tiempoInicioGUIÑOIzq = null;
+let tiempoInicioGUIÑODer = null;
 
 function setStatus(message) {
     statusPanel.textContent = message;
@@ -137,8 +137,8 @@ function actualizarEstadoTexto(metrics) {
         `Ojo izq: ${metrics.dIzq.toFixed(4)}\n` +
         `Ojo der: ${metrics.dDer.toFixed(4)}\n` +
         `Tiempo ambos: ${metrics.tiempoCierreActual} ms\n` +
-        `Tiempo guiño izq: ${metrics.tiempoGuinyoIzqActual} ms\n` +
-        `Tiempo guiño der: ${metrics.tiempoGuinyoDerActual} ms\n` +
+        `Tiempo guiño izq: ${metrics.tiempoGUIÑOIzqActual} ms\n` +
+        `Tiempo guiño der: ${metrics.tiempoGUIÑODerActual} ms\n` +
         `Cooldown: ${cooldown ? "ON" : "OFF"}`
     );
 }
@@ -151,22 +151,22 @@ function procesarGestos(metrics) {
     if (metrics.ambosCerrados && metrics.tiempoCierreActual >= EYES_CLOSED_EXIT_MS) {
         socket.emit("comando-salir");
         tiempoInicioOjosCerrados = null;
-        tiempoInicioGuinyoIzq = null;
-        tiempoInicioGuinyoDer = null;
+        tiempoInicioGUIÑOIzq = null;
+        tiempoInicioGUIÑODer = null;
         triggerCooldown();
         return;
     }
 
-    if (metrics.soloDerCerrado && metrics.tiempoGuinyoDerActual >= SINGLE_WINK_MS) {
+    if (metrics.soloDerCerrado && metrics.tiempoGUIÑODerActual >= SINGLE_WINK_MS) {
         socket.emit("guiño-derecho");
-        tiempoInicioGuinyoDer = null;
+        tiempoInicioGUIÑODer = null;
         triggerCooldown();
         return;
     }
 
-    if (metrics.soloIzqCerrado && metrics.tiempoGuinyoIzqActual >= SINGLE_WINK_MS) {
+    if (metrics.soloIzqCerrado && metrics.tiempoGUIÑOIzqActual >= SINGLE_WINK_MS) {
         socket.emit("guiño-izquierdo");
-        tiempoInicioGuinyoIzq = null;
+        tiempoInicioGUIÑOIzq = null;
         triggerCooldown();
         return;
     }
@@ -200,36 +200,36 @@ function construirMetricas(marks) {
     const eyeDist = Math.abs(marks[33].x - marks[263].x);
 
     let tiempoCierreActual = 0;
-    let tiempoGuinyoIzqActual = 0;
-    let tiempoGuinyoDerActual = 0;
+    let tiempoGUIÑOIzqActual = 0;
+    let tiempoGUIÑODerActual = 0;
 
     if (ambosCerrados) {
         if (tiempoInicioOjosCerrados === null) {
             tiempoInicioOjosCerrados = Date.now();
         }
         tiempoCierreActual = Date.now() - tiempoInicioOjosCerrados;
-        tiempoInicioGuinyoIzq = null;
-        tiempoInicioGuinyoDer = null;
+        tiempoInicioGUIÑOIzq = null;
+        tiempoInicioGUIÑODer = null;
     } else {
         tiempoInicioOjosCerrados = null;
     }
 
     if (soloIzqCerrado) {
-        if (tiempoInicioGuinyoIzq === null) {
-            tiempoInicioGuinyoIzq = Date.now();
+        if (tiempoInicioGUIÑOIzq === null) {
+            tiempoInicioGUIÑOIzq = Date.now();
         }
-        tiempoGuinyoIzqActual = Date.now() - tiempoInicioGuinyoIzq;
+        tiempoGUIÑOIzqActual = Date.now() - tiempoInicioGUIÑOIzq;
     } else {
-        tiempoInicioGuinyoIzq = null;
+        tiempoInicioGUIÑOIzq = null;
     }
 
     if (soloDerCerrado) {
-        if (tiempoInicioGuinyoDer === null) {
-            tiempoInicioGuinyoDer = Date.now();
+        if (tiempoInicioGUIÑODer === null) {
+            tiempoInicioGUIÑODer = Date.now();
         }
-        tiempoGuinyoDerActual = Date.now() - tiempoInicioGuinyoDer;
+        tiempoGUIÑODerActual = Date.now() - tiempoInicioGUIÑODer;
     } else {
-        tiempoInicioGuinyoDer = null;
+        tiempoInicioGUIÑODer = null;
     }
 
     return {
@@ -240,8 +240,8 @@ function construirMetricas(marks) {
         soloDerCerrado,
         eyeDist,
         tiempoCierreActual,
-        tiempoGuinyoIzqActual,
-        tiempoGuinyoDerActual,
+        tiempoGUIÑOIzqActual,
+        tiempoGUIÑODerActual,
         ...infoNariz,
         estadoActualNariz: infoNariz.estado
     };
@@ -250,8 +250,8 @@ function construirMetricas(marks) {
 function resetDeteccion() {
     estadoNariz = "centro";
     tiempoInicioOjosCerrados = null;
-    tiempoInicioGuinyoIzq = null;
-    tiempoInicioGuinyoDer = null;
+    tiempoInicioGUIÑOIzq = null;
+    tiempoInicioGUIÑODer = null;
     clearOverlay();
     setStatus("No se detecta ninguna cara.\nComprueba luz, encuadre y distancia a la camara.");
 }

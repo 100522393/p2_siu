@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualizador Ubicuo</title>
+    <link rel="stylesheet" href="/css/index.css">
+</head>
+<body>
+    <main class="viewer-page">
+        <section id="menu" class="menu-panel">
+            <h1>Selecciona una Partitura</h1>
+            <p>Mueve la cabeza para navegar y usa los guiños para avanzar o retroceder.</p>
+            <div class="menu-options">
+                <div class="opcion seleccionada" id="opt0">Bach - Preludio</div>
+                <div class="opcion" id="opt1">Mozart - Sonata</div>
+                <div class="opcion" id="opt2">Beethoven - 5ª</div>
+            </div>
+        </section>
+
+        <section id="partitura-contenedor" class="sheet-panel" aria-live="polite">Página 1</section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="/js/index.js"></script>
+</body>
+</html>

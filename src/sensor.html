@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sensor | Sin Interrumpir el Flow</title>
+    <link rel="stylesheet" href="/css/sensor.css">
+</head>
+<body>
+    <main class="sensor-page">
+        <header class="page-header">
+            <h1>Control Gestual y Corporal</h1>
+            <label class="dev-toggle">
+                <input type="checkbox" id="devToggle">
+                <span>Modo desarrollador</span>
+            </label>
+        </header>
+
+        <section class="camera-section" aria-label="Sensor de camara">
+            <div class="camera-container">
+                <video id="webcam" autoplay playsinline muted></video>
+                <canvas id="overlay"></canvas>
+            </div>
+            <pre id="status" class="status-panel">Iniciando...</pre>
+        </section>
+    </main>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+    <script src="/js/sensor.js"></script>
+</body>
+</html>

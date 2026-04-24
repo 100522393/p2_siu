@@ -20,26 +20,32 @@ let tiempoInicioOjosCerrados = null;
 let tiempoInicioGUIÑOIzq = null;
 let tiempoInicioGUIÑODer = null;
 
+// Muestra mensajes de estado y ayuda en el panel del sensor.
 function setStatus(message) {
     statusPanel.textContent = message;
 }
 
+// Ajusta el canvas de depuracion al tamaño real del video de la webcam.
 function syncCanvasSize() {
     canvas.width = video.videoWidth || 640;
     canvas.height = video.videoHeight || 480;
 }
 
+// Limpia las marcas y lineas dibujadas sobre el video.
 function clearOverlay() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 }
 
+// Bloquea temporalmente nuevos gestos para evitar envios repetidos por una misma accion.
 function triggerCooldown() {
     cooldown = true;
+    // Desactiva el bloqueo pasado el tiempo de espera configurado.
     window.setTimeout(() => {
         cooldown = false;
     }, COOLDOWN_MS);
 }
 
+// Dibuja un punto de depuracion en una posicion del canvas.
 function drawPoint(x, y, color = "#57ff72", radius = 2) {
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -47,6 +53,7 @@ function drawPoint(x, y, color = "#57ff72", radius = 2) {
     ctx.fill();
 }
 
+// Dibuja una linea de depuracion entre dos puntos del canvas.
 function drawLine(x1, y1, x2, y2, color = "#ffd24a", width = 2) {
     ctx.beginPath();
     ctx.moveTo(x1, y1);
@@ -56,12 +63,14 @@ function drawLine(x1, y1, x2, y2, color = "#ffd24a", width = 2) {
     ctx.stroke();
 }
 
+// Escribe texto de depuracion sobre el canvas del sensor.
 function drawText(text, x, y, color = "#ffffff") {
     ctx.fillStyle = color;
     ctx.font = "14px monospace";
     ctx.fillText(text, x, y);
 }
 
+// Calcula si la nariz esta centrada o desplazada respecto al centro de los ojos.
 function getEstadoNarizSegunCara(marks) {
     const noseX = marks[1].x;
     const leftEyeX = marks[33].x;
@@ -80,6 +89,7 @@ function getEstadoNarizSegunCara(marks) {
     return { estado: "centro", noseX, eyeCenterX, noseOffset };
 }
 
+// Dibuja las marcas faciales y metricas utiles cuando esta activado el modo desarrollador.
 function drawDebug(marks, metrics) {
     if (!devMode) {
         clearOverlay();
@@ -88,6 +98,7 @@ function drawDebug(marks, metrics) {
 
     clearOverlay();
 
+    // Pinta cada punto facial detectado por MediaPipe sobre el video.
     marks.forEach((point) => {
         drawPoint(point.x * canvas.width, point.y * canvas.height, "#57ff72", 1.8);
     });
@@ -129,6 +140,7 @@ function drawDebug(marks, metrics) {
     drawText(`Cooldown: ${cooldown ? "ON" : "OFF"}`, 10, 134, cooldown ? "#ff5858" : "#57ff72");
 }
 
+// Actualiza el panel textual con las metricas actuales de ojos, nariz y cooldown.
 function actualizarEstadoTexto(metrics) {
     setStatus(
         `Modo dev: ${devMode}\n` +
@@ -143,6 +155,7 @@ function actualizarEstadoTexto(metrics) {
     );
 }
 
+// Convierte las metricas de la cara en comandos Socket.IO para controlar el visualizador.
 function procesarGestos(metrics) {
     if (cooldown) {
         return;
@@ -186,6 +199,7 @@ function procesarGestos(metrics) {
     socket.emit("comando-zoom", metrics.eyeDist > ZOOM_THRESHOLD ? 1.5 : 1.0);
 }
 
+// Extrae distancias y tiempos de cierre de ojos a partir de los landmarks faciales.
 function construirMetricas(marks) {
     const dIzq = Math.abs(marks[386].y - marks[374].y);
     const dDer = Math.abs(marks[159].y - marks[145].y);
@@ -247,6 +261,7 @@ function construirMetricas(marks) {
     };
 }
 
+// Reinicia el estado del sensor cuando no se detecta una cara valida.
 function resetDeteccion() {
     estadoNariz = "centro";
     tiempoInicioOjosCerrados = null;
@@ -256,6 +271,7 @@ function resetDeteccion() {
     setStatus("No se detecta ninguna cara.\nComprueba luz, encuadre y distancia a la camara.");
 }
 
+// Inicializa MediaPipe FaceMesh, la webcam y el bucle de deteccion de gestos.
 async function iniciarSensor() {
     if (!window.FaceMesh || !window.Camera) {
         setStatus("No se han podido cargar las librerias de MediaPipe.");
@@ -265,6 +281,7 @@ async function iniciarSensor() {
     setStatus("Inicializando sensor...");
 
     const faceMesh = new FaceMesh({
+        // Indica a MediaPipe desde donde cargar los archivos necesarios de FaceMesh.
         locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${file}`
     });
 
@@ -275,6 +292,7 @@ async function iniciarSensor() {
         minTrackingConfidence: 0.5
     });
 
+    // Procesa cada resultado de FaceMesh, actualizando depuracion y emitiendo gestos.
     faceMesh.onResults((results) => {
         syncCanvasSize();
 
@@ -292,6 +310,7 @@ async function iniciarSensor() {
     });
 
     const camera = new Camera(video, {
+        // Envia cada fotograma de la webcam a FaceMesh para analizar la cara en tiempo real.
         onFrame: async () => {
             await faceMesh.send({ image: video });
         },
@@ -308,6 +327,7 @@ async function iniciarSensor() {
     }
 }
 
+// Activa o desactiva el modo desarrollador y limpia el overlay cuando se apaga.
 devToggle.addEventListener("change", (event) => {
     devMode = event.target.checked;
     if (!devMode) {
